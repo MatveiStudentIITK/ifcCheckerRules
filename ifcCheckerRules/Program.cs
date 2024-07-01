@@ -1,4 +1,6 @@
-﻿using System.Xml;
+﻿using System.Drawing;
+using System.Reflection;
+using System.Xml;
 using Xbim.Ifc;
 using Xbim.Ifc4.Interfaces;
 
@@ -6,55 +8,114 @@ namespace ifcCheckerRules
 {
     internal class Program
     {
-        private double AllowedFileSize, ActualFileSize;
+        struct CheckResult
+        {
+            string FileName;
+            double ColorCheckResult, MaskCheckResult, AttributeCheckResult;
+            bool VersionCheckResult, SizeCheckResult;
+        }
         static void Main()
         {
-            CheckCurrentFile(
-                new FileStream("C:\\Users\\matve\\Downloads\\Telegram Desktop\\SYLA_ALL_CPTI_B_1.6_ХХ_24.1.1.1_M6_MF_1_AR22_I4000.ifc", FileMode.Open),
-                new XmlDocument()
-                );
+            CheckIfcRules(new FileStream("C:\\Users\\matve\\Downloads\\Telegram Desktop\\SYLA_ALL_CPTI_B_1.6_ХХ_24.1.1.1_M6_MF_1_AR22_I4000.ifc"
+                , FileMode.Open)
+                , new FileStream("D:\\Практика\\ifcCheckerRules\\TestFile.xml"
+                , FileMode.Open));
         }
-        private static bool CheckIfcFileVersion(IfcStore IStore, XmlElement Root)
+        static XmlDocument CheckIfcRules(FileStream IIfcFileStream, FileStream IXmlFileStream)
         {
-            return IStore.SchemaVersion.ToString() == Root.Attributes.GetNamedItem("ifcVersion").InnerText;
+            IfcStore IIfcStore = IfcStore.Open(
+                IIfcFileStream,
+                Xbim.IO.StorageType.Ifc,
+                Xbim.Common.Step21.XbimSchemaVersion.Ifc4,
+                Xbim.IO.XbimModelType.MemoryModel);
+
+            XmlDocument XmlRules = new XmlDocument();
+            XmlRules.Load(IXmlFileStream);
+
+            XmlDocument Result = new XmlDocument();
+
+            Result.CreateElement("IfcCheckResults");
+
+            XmlElement ResultRoot = Result.DocumentElement;
+
+            var ColorCheck = CheckColorsRules(IIfcStore, XmlRules.DocumentElement);
+
+            return Result;
         }
-        private static bool CheckIfcFileColors()
+        static bool CheckVersionRule(IfcStore IIfcStore, XmlElement IXmlVersionRule)
         {
-            return true;
+            return IIfcStore.SchemaVersion.ToString() == IXmlVersionRule.InnerText;
         }
-        public static XmlDocument CheckCurrentFile(FileStream IFCFileStream, XmlDocument RulesXMLFile)
+        static bool CheckFileSizeRule(FileStream IIfcFileStream, XmlElement IXmlFileSizeRule)
         {
-            IfcStore IStore = IfcStore.Open(IFCFileStream, Xbim.IO.StorageType.Ifc, Xbim.IO.XbimModelType.MemoryModel);
-
-            IEnumerable<IIfcColourRgb> Colours = GetColours<IIfcPipeSegment>(IStore, "Наименование системы по ПИМ", "Трубопроводная система: Прочее");
-
-            foreach (IIfcColourRgb colour in Colours) Console.WriteLine(colour);
-
-            CheckIfcFileVersion(IStore, RulesXMLFile.DocumentElement);
-
-            var theDoor = IStore.Model.Instances.FirstOrDefault<IIfcPipeSegment>();
-            Console.WriteLine($"Pipe ID: {theDoor.GlobalId}, Name: {theDoor.Name}");
-
-            //get all single-value properties of the door
-            var properties = theDoor.IsDefinedBy
-                .Where(r => r.RelatingPropertyDefinition is IIfcPropertySet)
-                .SelectMany(r => ((IIfcPropertySet)r.RelatingPropertyDefinition).HasProperties)
-                .OfType<IIfcPropertySingleValue>();
-
-            foreach (var property in properties)
-                Console.WriteLine($"Property: {property.Name},\tValue: {property.NominalValue}");
-
-            return new XmlDocument();
+            return IIfcFileStream.Length <= long.Parse(IXmlFileSizeRule.InnerText);
         }
+        static double CheckFileNameMaskRule(FileStream IIfcFileStream, XmlElement IXmlFileNameMaskRule)
+        {
+            return 0;
+        }
+        static double CheckColorsRules(IfcStore IIfcStore, XmlElement IXmlColorRules)
+        {
+            double ElementsCount = 0, CorrectElementsCount = 0;
+            foreach (XmlNode IXmlColorRule in IXmlColorRules)
+            {
+                if (IXmlColorRule.Name == "CategoryElementColors")
+                {
+                    String AttributeName = null;
+                    String AttributeValue = null;
+                    Color CategoryColor = Color.White;
+                    Type IfcClass = null;
 
-        private static IEnumerable<IIfcColourRgb> GetColours<ILocalIfcType>(IfcStore IIfcStore, String AttributeName, String AttributeValue) where ILocalIfcType : IIfcElement
+                    foreach (XmlElement IXmlCategoryElementColor in IXmlColorRule.ChildNodes)
+                    {
+                        if (IXmlCategoryElementColor.Name == "attributeName") AttributeName = IXmlCategoryElementColor.InnerText;
+
+                        if (IXmlCategoryElementColor.Name == "attributeValue") AttributeValue = IXmlCategoryElementColor.InnerText;
+
+                        if (IXmlCategoryElementColor.Name == "Color")
+                        {
+                            int R = 0, G = 0, B = 0;
+
+                            foreach (XmlElement XmlColor in IXmlCategoryElementColor.ChildNodes)
+                            {
+                                if (XmlColor.Name == "r") R = int.Parse(XmlColor.InnerText);
+                                if (XmlColor.Name == "g") G = int.Parse(XmlColor.InnerText);
+                                if (XmlColor.Name == "b") B = int.Parse(XmlColor.InnerText);
+                            }
+
+                            CategoryColor = Color.FromArgb(R, G, B);
+                        }
+
+                        if (IXmlCategoryElementColor.Name == "ifcClass")
+                            foreach (Assembly Asm in AppDomain.CurrentDomain.GetAssemblies())
+                            {
+                                IfcClass = Asm.GetType("Xbim.Ifc4.Interfaces." + IXmlCategoryElementColor.InnerText);
+                                if (IfcClass != null) break;
+                            }
+                    }
+
+                    var Templ = typeof(Program);
+                    var Method = Templ.GetMethod("GetIfcColours");
+                    var Hurr = Method.MakeGenericMethod(IfcClass);
+                    var TemplClass = new Program();
+
+                    IEnumerable<IIfcColourRgb> ElementsColours = Hurr.Invoke(TemplClass, new object[] { IIfcStore, AttributeName, AttributeValue }) as IEnumerable<IIfcColourRgb>;
+
+                    ElementsCount += (ushort)ElementsColours.Count();
+
+                    foreach (var c in ElementsColours)
+                    {
+                        if ((double)c.Red.Value == (double)(CategoryColor.R / byte.MaxValue)) CorrectElementsCount++;
+                    }
+                }
+            }
+            return CorrectElementsCount / ElementsCount;
+        }
+        public static IEnumerable<IIfcColourRgb> GetIfcColours<IIfcLocalType>(IfcStore IIfcStore, String AttributeName, String AttributeValue) where IIfcLocalType : IIfcElement
         {
             IEnumerable<IIfcColourRgb> Colours = new List<IIfcColourRgb>();
 
-            IIfcColourRgb Color;
-
-            foreach (var Element in IIfcStore.Instances
-                .OfType<ILocalIfcType>())
+            foreach (var Element in IIfcStore.Instances.OfType<IIfcLocalType>())
             {
                 var Properties = Element
                     .IsDefinedBy
@@ -69,7 +130,7 @@ namespace ifcCheckerRules
                     .Value
                     .ToString() == AttributeValue)
                 {
-                    Color = (((Element
+                    var Color = (((Element
                         .Representation
                         .Representations
                         .FirstOrDefault(r => r.RepresentationType == "SweptSolid")
@@ -81,13 +142,17 @@ namespace ifcCheckerRules
                         .FirstOrDefault(s => s is IIfcSurfaceStyle) as IIfcSurfaceStyle)
                         .Styles
                         .FirstOrDefault(s => s is IIfcSurfaceStyleRendering) as IIfcSurfaceStyleRendering)
-                        .SurfaceColour;
+                    .SurfaceColour;
 
                     (Colours as List<IIfcColourRgb>).Add(Color);
                 }
             }
 
             return Colours;
+        }
+        static double CheckAttributesRules(IfcStore IIfcStore, XmlElement IXmlAttributesRule)
+        {
+            return 0;
         }
     }
 }

@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<IfcCheckerRules>
+	<ifcVersion>Ifc4</ifcVersion>
+	<fileSize>256</fileSize>
+	<FileNameMask>
+		<separator></separator>
+		<FileNamePlaceholder>
+			<order></order>
+			<type></type>
+			<value></value>
+		</FileNamePlaceholder>
+	</FileNameMask>
+	<CategoryElementColors>
+		<attributeName>Наименование системы по ПИМ</attributeName>
+		<attributeValue>Трубопроводная система: Прочее</attributeValue>
+		<Color>
+			<r>255</r>
+			<g>255</g>
+			<b>255</b>
+		</Color>
+		<ifcClass>IIfcPipeSegment</ifcClass>
+	</CategoryElementColors>
+	<Coordinates>
+		<name></name>
+		<n></n>
+		<e></e>
+		<a></a>
+		<r></r>
+	</Coordinates>
+	<AttributesComparison>
+		<ifcClass></ifcClass>
+		<Attribute>
+			<name></name>
+			<type></type>
+		</Attribute>
+		<Comparison>
+			<comparisonType></comparisonType>
+			<comparisonValue></comparisonValue>
+		</Comparison>
+	</AttributesComparison>
+</IfcCheckerRules>
