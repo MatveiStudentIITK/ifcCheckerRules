@@ -52,6 +52,43 @@ namespace ifcCheckerRules
         }
         static double CheckFileNameMaskRule(FileStream IIfcFileStream, XmlElement IXmlFileNameMaskRule)
         {
+            char Separator = char.MinValue;
+
+            foreach (XmlNode IXmlFileNameRule in IXmlFileNameMaskRule)
+            {
+                if (IXmlFileNameRule.Name == "FileNameMask")
+                {
+                    foreach (XmlElement IXmlFileMaskElement in IXmlFileNameRule.ChildNodes)
+                    {
+                        switch (IXmlFileMaskElement.Name)
+                        {
+                            case "separator": { Separator = IXmlFileMaskElement.InnerText[0]; break; }
+
+                            case "FileNamePlaceholder":
+                                {
+                                    foreach (XmlElement IXmlFileNamePlace in IXmlFileMaskElement.ChildNodes)
+                                    {
+                                        switch (IXmlFileNamePlace.Name)
+                                        {
+                                            case "order": { break; }
+
+                                            case "type": { break; }
+
+                                            case "value": { break; }
+
+                                            default: break;
+                                        }
+                                    }
+
+                                    break;
+                                }
+
+                            default: break;
+                        }
+                    }
+                }
+            }
+
             return 0;
         }
         static double CheckColorsRules(IfcStore IIfcStore, XmlElement IXmlColorRules)
@@ -68,30 +105,40 @@ namespace ifcCheckerRules
 
                     foreach (XmlElement IXmlCategoryElementColor in IXmlColorRule.ChildNodes)
                     {
-                        if (IXmlCategoryElementColor.Name == "attributeName") AttributeName = IXmlCategoryElementColor.InnerText;
-
-                        if (IXmlCategoryElementColor.Name == "attributeValue") AttributeValue = IXmlCategoryElementColor.InnerText;
-
-                        if (IXmlCategoryElementColor.Name == "Color")
+                        switch (IXmlCategoryElementColor.Name)
                         {
-                            int R = 0, G = 0, B = 0;
+                            case "attributeName": { AttributeName = IXmlCategoryElementColor.InnerText; break; }
 
-                            foreach (XmlElement XmlColor in IXmlCategoryElementColor.ChildNodes)
-                            {
-                                if (XmlColor.Name == "r") R = int.Parse(XmlColor.InnerText);
-                                if (XmlColor.Name == "g") G = int.Parse(XmlColor.InnerText);
-                                if (XmlColor.Name == "b") B = int.Parse(XmlColor.InnerText);
-                            }
+                            case "attributeValue": { AttributeValue = IXmlCategoryElementColor.InnerText; break; }
 
-                            CategoryColor = Color.FromArgb(R, G, B);
+                            case "Color":
+                                {
+                                    int R = 0, G = 0, B = 0;
+
+                                    foreach (XmlElement XmlColor in IXmlCategoryElementColor.ChildNodes)
+                                    {
+                                        if (XmlColor.Name == "r") R = int.Parse(XmlColor.InnerText);
+                                        if (XmlColor.Name == "g") G = int.Parse(XmlColor.InnerText);
+                                        if (XmlColor.Name == "b") B = int.Parse(XmlColor.InnerText);
+                                    }
+
+                                    CategoryColor = Color.FromArgb(R, G, B);
+
+                                    break;
+                                }
+
+                            case "ifcClass":
+                                {
+                                    foreach (Assembly Asm in AppDomain.CurrentDomain.GetAssemblies())
+                                    {
+                                        IfcClass = Asm.GetType("Xbim.Ifc4.Interfaces." + IXmlCategoryElementColor.InnerText);
+                                        if (IfcClass != null) break;
+                                    }
+                                    break;
+                                }
+
+                            default: break;
                         }
-
-                        if (IXmlCategoryElementColor.Name == "ifcClass")
-                            foreach (Assembly Asm in AppDomain.CurrentDomain.GetAssemblies())
-                            {
-                                IfcClass = Asm.GetType("Xbim.Ifc4.Interfaces." + IXmlCategoryElementColor.InnerText);
-                                if (IfcClass != null) break;
-                            }
                     }
 
                     var Templ = typeof(Program);

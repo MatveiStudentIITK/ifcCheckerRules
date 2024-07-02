@@ -3,7 +3,7 @@
 	<ifcVersion>Ifc4</ifcVersion>
 	<fileSize>256</fileSize>
 	<FileNameMask>
-		<separator></separator>
+		<separator>-</separator>
 		<FileNamePlaceholder>
 			<order></order>
 			<type></type>
