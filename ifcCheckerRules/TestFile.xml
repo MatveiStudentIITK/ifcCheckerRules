@@ -3,7 +3,7 @@
 	<ifcVersion>Ifc4</ifcVersion>
 	<fileSize>256</fileSize>
 	<FileNameMask>
-		<separator>-</separator>
+		<separator>_</separator>
 		<FileNamePlaceholder>
 			<order></order>
 			<type></type>
@@ -15,10 +15,10 @@
 		<attributeValue>Трубопроводная система: Прочее</attributeValue>
 		<Color>
 			<r>255</r>
-			<g>255</g>
+			<g>0</g>
 			<b>255</b>
 		</Color>
-		<ifcClass>IIfcPipeSegment</ifcClass>
+		<ifcClass>IfcPipeSegment</ifcClass>
 	</CategoryElementColors>
 	<Coordinates>
 		<name></name>
