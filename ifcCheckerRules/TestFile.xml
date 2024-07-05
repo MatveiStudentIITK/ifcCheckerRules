@@ -5,9 +5,9 @@
 	<FileNameMask>
 		<separator>_</separator>
 		<FileNamePlaceholder>
-			<order></order>
-			<type></type>
-			<value></value>
+			<order>25</order>
+			<type>Тип</type>
+			<value>Значение;Значение</value>
 		</FileNamePlaceholder>
 	</FileNameMask>
 	<CategoryElementColors>

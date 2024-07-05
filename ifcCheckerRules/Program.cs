@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Xml;
 using Xbim.Ifc;
 using Xbim.Ifc4.Interfaces;
+using Xbim.ModelGeometry.Scene;
 
 namespace IfcRuleChecker
 {
@@ -21,9 +22,16 @@ namespace IfcRuleChecker
             NameFieldsCount = 0;
             CorrectNameCount = 0;
 
-            String[] NameFields;
+            String[]
+                NameFields = null,
+                Values = null;
 
             char Separator;
+
+            int Order = -1;
+
+            String
+                Type = null;
 
             foreach (XmlElement IIfcFileMaskRule in IIfcFileMaskNameRuleXmlElement.ChildNodes)
             {
@@ -40,6 +48,48 @@ namespace IfcRuleChecker
                         }
                     case "FileNamePlaceholder":
                         {
+                            foreach (XmlElement PlaceholderChild in IIfcFileMaskRule.ChildNodes)
+                            {
+                                switch (PlaceholderChild.Name)
+                                {
+                                    case "order":
+                                        {
+                                            Order = int.Parse(PlaceholderChild.InnerText); break;
+                                        }
+                                    case "type":
+                                        {
+                                            Type = PlaceholderChild.InnerText; break;
+                                        }
+                                    case "value":
+                                        {
+                                            Values = PlaceholderChild.InnerText.Split(';'); break;
+                                        }
+                                    default: break;
+                                }
+                            }
+
+                            bool IsPassed = true;
+
+                            if (Type != "свободное значение")
+                            {
+                                if (NameFieldsCount <= Order)
+                                {
+                                    IsPassed = false;
+                                }
+                                else
+                                {
+                                    String CurrentPlace = NameFields[Order];
+
+                                    IsPassed = false;
+
+                                    foreach (var AllowedVal in Values)
+                                        if (CurrentPlace == AllowedVal)
+                                            IsPassed = true;
+                                }
+                            }
+
+                            if (IsPassed) CorrectNameCount++;
+
                             break;
                         }
                     default: break;
@@ -87,17 +137,23 @@ namespace IfcRuleChecker
 
             return Colours;
         }
-        public static bool CheckCategoryElementColor<IIfcLocalType>(IfcStore IIfcStore, String AttributeName, String AttributeValue, Color CategoryColor) where IIfcLocalType : IIfcElement
+        public static Tuple<bool, long, long> CheckCategoryElementColor<IIfcLocalType>(IfcStore IIfcStore, String AttributeName, String AttributeValue, Color CategoryColor) where IIfcLocalType : IIfcElement
         {
             var CurrentCategoryColors = GetIfcColours<IIfcLocalType>(IIfcStore, AttributeName, AttributeValue);
 
+            long CategoryColorCount = CurrentCategoryColors.Count();
+            long CorrectCategoryColorsCount = 0;
+
             foreach (var CurrColor in CurrentCategoryColors)
+            {
                 if ((double)CurrColor.Red.Value != ((double)CategoryColor.R / 255)
                     || (double)CurrColor.Green.Value != ((double)CategoryColor.G / 255)
                     || (double)CurrColor.Blue.Value != ((double)CategoryColor.B / 255))
-                    return false;
-
-            return true;
+                    CorrectCategoryColorsCount++;
+            }
+            return new Tuple<bool, long, long>( CorrectCategoryColorsCount / CategoryColorCount == 1
+                                              , CategoryColorCount
+                                              , CorrectCategoryColorsCount);
         }
         static bool CheckCategoryElementColors(IfcStore IIfcStore, XmlElement IIfcCategoryColorsRuleXmlElement, ref XmlDocument IXmlDocument, out long CategoryColorsCount, out long CorrectCategoryColorsCount)
         {
@@ -159,9 +215,15 @@ namespace IfcRuleChecker
                     var ProgramMethod = TemplateProgramObjectType.GetMethod("CheckCategoryElementColor");
                     var Hurr = ProgramMethod.MakeGenericMethod(CurrentIfcClass);
 
-                    IsCorrectCategoryColor = (bool)Hurr.Invoke(ProgramMethod, new object[] { IIfcStore, AttributeName, AttributeValue, CategoryColor });
+                    var TemplateVariable = (Tuple<bool, long, long>)Hurr.Invoke(ProgramMethod, new object[] { IIfcStore, AttributeName, AttributeValue, CategoryColor });
+
+                    IsCorrectCategoryColor = TemplateVariable.Item1;
+                    CategoryColorsCount += TemplateVariable.Item2;
+                    CorrectCategoryColorsCount += TemplateVariable.Item3;
 
                     CheckResult = CheckResult ? IsCorrectCategoryColor : false;
+
+                    CurrentIfcClass = null;
                 }
             }
 
@@ -169,16 +231,73 @@ namespace IfcRuleChecker
         }
         static bool CheckCoordinatesCheck(IfcStore IIfcStore, XmlElement IIfcCoordinatesRuleXmlElement, ref XmlDocument IXmlDocument)
         {
+            String Name = null;
+            double n = Double.MinValue, e = Double.MinValue;
+            ushort a = ushort.MinValue, r = ushort.MinValue;
+
+            foreach (XmlElement CoorXml in IIfcCoordinatesRuleXmlElement)
+            {
+                switch (CoorXml.Name)
+                {
+                    case "name":
+                        {
+                            Name = CoorXml.InnerText; break;
+                        }
+                    case "n":
+                        {
+                            n = double.Parse(CoorXml.InnerText); break;
+                        }
+                    case "e":
+                        {
+                            e = double.Parse(CoorXml.InnerText); break;
+                        }
+                    case "a":
+                        {
+                            a = ushort.Parse(CoorXml.InnerText); break;
+                        }
+                    case "r":
+                        {
+                            r = ushort.Parse(CoorXml.InnerText); break;
+                        }
+                    default: break;
+                }
+            }
+
+            var Context = new Xbim3DModelContext(IIfcStore);
+            Context.CreateContext();
+
+            IIfcElement IfcElement = IIfcStore.Instances.OfType<IIfcElement>().FirstOrDefault(i => i.Name == Name);
+
+            var GlobalPosition = Context
+                .ShapeInstances()
+                .FirstOrDefault(i => i.IfcProductLabel == IfcElement.EntityLabel)
+                .Transformation
+                .Translation;
+
+            var Rottion = Context
+                .ShapeInstances()
+                .FirstOrDefault(i => i.IfcProductLabel == IfcElement.EntityLabel)
+                .Transformation
+                .GetRotationQuaternion();
+
+            return n == GlobalPosition.Y
+                && e == GlobalPosition.X
+                && a == GlobalPosition.Z
+                && r == Rottion.Z;
+        }
+        static bool CheckAttributesComperisons(IfcStore IIfcStore, XmlElement IIfcAttributesRules, ref XmlDocument IXmlDocument)
+        {
             return false;
         }
-        static XmlDocument CheckIfcFile(FileStream IIfcFileStream, FileStream IRuleXmlFileStream, ref XmlDocument IXmlDocument)
+        static XmlDocument CheckIfcFile(FileStream IIfcFileStream, FileStream IRuleXmlFileStream, ref XmlDocument? IXmlDocument)
         {
             bool
                 IsCorrectIfcVersion,
                 IsCorrectIfcFileSize,
                 IsPassFileNameMaskCheck,
                 IsPassCategoryElementColorCheck,
-                IsPassCoordinatesCheck;
+                IsPassCoordinatesCheck,
+                IsCorrectAttributeComperisonCheck;
 
             ushort
                 NameFieldsCount,
@@ -188,10 +307,15 @@ namespace IfcRuleChecker
                 CategoryColorsCount,
                 CorrectCategoryColorsCount;
 
-            IfcStore IIfcFileStore = IfcStore.Open(IIfcFileStream, Xbim.IO.StorageType.Ifc, Xbim.Common.Step21.XbimSchemaVersion.Ifc4, Xbim.IO.XbimModelType.MemoryModel);
-
             XmlDocument IRuleXmlFile = new XmlDocument();
             IRuleXmlFile.Load(IRuleXmlFileStream);
+
+            IfcStore IIfcFileStore = IfcStore.Open(
+                IIfcFileStream, Xbim.IO.StorageType.Ifc
+                , IRuleXmlFile.DocumentElement.FirstChild.InnerText == "Ifc4"
+                ? Xbim.Common.Step21.XbimSchemaVersion.Ifc4
+                : Xbim.Common.Step21.XbimSchemaVersion.Ifc2X3
+                , Xbim.IO.XbimModelType.MemoryModel);
 
             foreach (XmlElement IIfcRuleXmlElement in IRuleXmlFile.DocumentElement)
             {
@@ -215,12 +339,11 @@ namespace IfcRuleChecker
                         }
                     case "Coordinates":
                         {
-                            IsPassCoordinatesCheck = CheckCoordinatesCheck(IIfcFileStore, IIfcRuleXmlElement, ref IXmlDocument);
-                            break;
+                            IsPassCoordinatesCheck = CheckCoordinatesCheck(IIfcFileStore, IIfcRuleXmlElement, ref IXmlDocument); break;
                         }
                     case "AttributesComparsion":
                         {
-                            break;
+                            IsCorrectAttributeComperisonCheck = CheckAttributesComperisons(IIfcFileStore, IIfcRuleXmlElement, ref IXmlDocument); break;
                         }
                     default: break;
                 }
