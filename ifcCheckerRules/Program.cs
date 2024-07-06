@@ -1,108 +1,275 @@
 ﻿using System.Drawing;
 using System.Reflection;
 using System.Xml;
+using Xbim.Common.Step21;
 using Xbim.Ifc;
 using Xbim.Ifc4.Interfaces;
 using Xbim.ModelGeometry.Scene;
 
-namespace IfcRuleChecker
+namespace Internship
 {
-    internal class Program
+    internal class IfcRuleChecker
     {
-        static bool CheckIfcVersion(IfcStore IIfcStore, XmlElement IIfcVersionRuleXmlElement)
+        public struct CheckResult
         {
-            return IIfcStore.SchemaVersion.ToString() == IIfcVersionRuleXmlElement.InnerText;
+            public CheckResult() {}
+            public String FileName;
+            public Tuple<bool, XbimSchemaVersion> VersionCheckResult;
+            public Tuple<bool, long> SizeCheckResult;
+            public Tuple<bool, double, IEnumerable<Tuple<bool, string, string>>> FileMaskCheckResult;
+            public Tuple<bool, double, IEnumerable<Tuple<bool, double, string>>> CategoryColorCheckResult = new(false, 0, new List<Tuple<bool, double, string>>());
+            public Tuple<bool, double, IEnumerable<Tuple<bool, Tuple<double, double, double, double>, string>>> CoordinatesCheckResult = new(false, 0, new List<Tuple<bool, Tuple<double, double, double, double>, string>>());
+            public Tuple<bool, double, IEnumerable<Tuple<bool, string, string>>> AttributesCheckResult = new(false, 0, new List<Tuple<bool, string, string>>());
         }
-        static bool CheckIfcFileSize(FileStream IIfcFileStream, XmlElement IIfcFileSizeRuleXmlElement)
+        public CheckResult CheckIfcFile(FileStream IFCFileStream, FileStream XMLFileStream)
         {
-            return IIfcFileStream.Length <= long.Parse(IIfcFileSizeRuleXmlElement.InnerText);
-        }
-        static bool CheckFileMaskName(FileStream IIfcFileStream, XmlElement IIfcFileMaskNameRuleXmlElement, ref XmlDocument IXmlDocument, out ushort NameFieldsCount, out ushort CorrectNameCount)
-        {
-            NameFieldsCount = 0;
-            CorrectNameCount = 0;
+            CheckResult IResult = new CheckResult();
 
-            String[]
-                NameFields = null,
-                Values = null;
+            XmlDocument IXMLFile = OpenXMLDocument(XMLFileStream);
+            if (IXMLFile.BaseURI == null) throw new Exception("Не удалось открыть XML-файл.");
 
-            char Separator;
 
-            int Order = -1;
 
-            String
-                Type = null;
+            IfcStore? IFCFile = OpenIFCFile(IFCFileStream);
+            if (IFCFile == null) throw new Exception("Не удалось открыть IFC-файл.");
 
-            foreach (XmlElement IIfcFileMaskRule in IIfcFileMaskNameRuleXmlElement.ChildNodes)
+            IResult.FileName = IFCFileStream.Name;
+
+
+
+            XmlElement? IRoot = IXMLFile.DocumentElement;
+            if (IRoot == null) throw new Exception("Не удалось получить корневой элемент в XML-файле: '" + XMLFileStream.Name + "'.");
+
+
+
+            string? IIfcFileVersion = IRoot.Attributes.GetNamedItem("ifcVersion").Value;
+            if (string.IsNullOrEmpty(IIfcFileVersion)) throw new Exception("Не удалось получить атрибут 'ifcVersion' в XML-файле: '" + XMLFileStream.Name + "'.");
+
+
+
+            IResult.VersionCheckResult = new Tuple<bool, XbimSchemaVersion>(CheckSchemaVersion(IFCFile, IIfcFileVersion), IFCFile.SchemaVersion);
+
+
+
+            long? IIfcFileSize = long.Parse(IRoot.Attributes.GetNamedItem("fileSize").Value);
+            if (IIfcFileSize == null) throw new Exception("Не удалось получить атрибут 'fileSize' в XML-файле: '" + XMLFileStream.Name + "'.");
+
+
+
+            IResult.SizeCheckResult = new Tuple<bool, long>(CheckFileSize(IFCFileStream, IRoot.Attributes.GetNamedItem("fileSize").Value), IFCFileStream.Length);
+
+
+
+
+            foreach (XmlElement ICurrentXMLElement in IRoot.ChildNodes)
             {
-                switch (IIfcFileMaskRule.Name)
+                switch (ICurrentXMLElement.Name)
                 {
-                    case "separator":
+                    case "FileNameMask":
                         {
-                            Separator = IIfcFileMaskRule.InnerText[0];
-
-                            String FileName = IIfcFileStream.Name.Split('\\').Last();
-                            NameFields = FileName.Remove(FileName.Length - 4).Split(Separator);
-                            NameFieldsCount = (ushort)NameFields.Length;
+                            IResult.FileMaskCheckResult = CheckFileMask(IFCFileStream, ICurrentXMLElement); break;
+                        }
+                    case "CategoryElementColors":
+                        {
+                            (IResult.CategoryColorCheckResult.Item3 as List<Tuple<bool, double, string>>)
+                                .Add(CheckCategoryColor(IFCFile, ICurrentXMLElement));
                             break;
                         }
-                    case "FileNamePlaceholder":
+                    case "Coordinates":
                         {
-                            foreach (XmlElement PlaceholderChild in IIfcFileMaskRule.ChildNodes)
-                            {
-                                switch (PlaceholderChild.Name)
-                                {
-                                    case "order":
-                                        {
-                                            Order = int.Parse(PlaceholderChild.InnerText); break;
-                                        }
-                                    case "type":
-                                        {
-                                            Type = PlaceholderChild.InnerText; break;
-                                        }
-                                    case "value":
-                                        {
-                                            Values = PlaceholderChild.InnerText.Split(';'); break;
-                                        }
-                                    default: break;
-                                }
-                            }
-
-                            bool IsPassed = true;
-
-                            if (Type != "свободное значение")
-                            {
-                                if (NameFieldsCount <= Order)
-                                {
-                                    IsPassed = false;
-                                }
-                                else
-                                {
-                                    String CurrentPlace = NameFields[Order];
-
-                                    IsPassed = false;
-
-                                    foreach (var AllowedVal in Values)
-                                        if (CurrentPlace == AllowedVal)
-                                            IsPassed = true;
-                                }
-                            }
-
-                            if (IsPassed) CorrectNameCount++;
-
+                            (IResult.CoordinatesCheckResult.Item3 as List<Tuple<bool, Tuple<double, double, double, double>, string>>)
+                                .Add(CheckCoordinates(IFCFile, ICurrentXMLElement));
                             break;
                         }
-                    default: break;
+                    case "AttributesComparison":
+                        {
+                            (IResult.AttributesCheckResult.Item3 as List<Tuple<bool, string, string>>)
+                                .Add(CheckAttribute());
+                            break;
+                        }
+                    default: throw (new Exception("Неизвестный XML-элемент в XML-файле: '" + XMLFileStream.Name + "'."));
                 }
             }
 
-            return (CorrectNameCount / NameFieldsCount) == 1;
+
+
+            return IResult;
         }
-        public static IEnumerable<IIfcColourRgb> GetIfcColours<IIfcLocalType>(IfcStore IIfcStore, String AttributeName, String AttributeValue) where IIfcLocalType : IIfcElement
+        XmlDocument OpenXMLDocument(FileStream XMLFileStream)
+        {
+            XmlDocument XMLDocument = new XmlDocument();
+
+            try
+            {
+                XMLDocument.Load(XMLFileStream);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+
+            return XMLDocument;
+        }
+        IfcStore? OpenIFCFile(FileStream IFCFileStream)
+        {
+            IfcStore? IFCFile = null;
+
+            try
+            {
+                IFCFile = IfcStore.Open(IFCFileStream, Xbim.IO.StorageType.Ifc, Xbim.IO.XbimModelType.MemoryModel);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+
+            return IFCFile;
+        }
+        bool CheckSchemaVersion(IfcStore IFCFile, String IFCVersion) => IFCFile.SchemaVersion.ToString() == IFCVersion;
+        bool CheckFileSize(FileStream IFCFileStream, String FileSize) => IFCFileStream.Length <= long.Parse(FileSize);
+        Tuple<bool, double, IEnumerable<Tuple<bool, string, string>>> CheckFileMask(FileStream IFCFileStream, XmlElement FileNameMaskRule)
+        {
+            var CheckResults = new List<Tuple<bool, string, string>>();
+
+
+
+            char? Separator = FileNameMaskRule.Attributes.GetNamedItem("separator").Value[0];
+            if (Separator == null) throw new Exception("Некорректный атрибут 'separator'.");
+
+
+
+            string[] FileMasks;
+            {
+                var fileName = IFCFileStream.Name.Split('\\').Last();
+                FileMasks = fileName.Remove(fileName.Length - 4).Split(Separator.Value);
+            }
+
+
+            foreach (XmlElement Mask in FileNameMaskRule.ChildNodes)
+            {
+                ushort Order;
+                if (!ushort.TryParse(Mask.Attributes.GetNamedItem("order").Value, out Order)) throw new Exception("Некорректный атрибут 'order'.");
+
+
+
+                string? Type = Mask.Attributes.GetNamedItem("type").Value;
+                if (Type == null) throw new Exception("Некорректный атрибут 'type'.");
+
+
+
+                switch (Type)
+                {
+                    case "Свободное значение":
+                        {
+                            CheckResults.Add(new Tuple<bool, string, string>(FileMasks[Order].Length > 0, Type, FileMasks[Order])); break;
+                        }
+                    case "Значение из списка":
+                        {
+                            string[] Values = Mask.Attributes.GetNamedItem("value").Value.Split(';');
+                            if (Values.Length < 2) throw new Exception("Некорректное значение атрибута 'value': " + Mask.Attributes.GetNamedItem("value").Value + '.');
+
+                            bool IsAllowed = false;
+
+                            if (Order < FileMasks.Count())
+                            {
+                                foreach (var Value in Values)
+                                {
+                                    IsAllowed = FileMasks[Order] == Value;
+                                    if (IsAllowed) break;
+                                }
+                                CheckResults.Add(new Tuple<bool, string, string>(IsAllowed, Type, FileMasks[Order]));
+                            }
+                            else
+                                CheckResults.Add(new Tuple<bool, string, string>(IsAllowed, Type, "'Order' за пределами количества масок"));
+
+                            break;
+                        }
+                    default: throw new Exception("Некорректное значения атрибута 'type': " + Type + '.');
+                }
+            }
+
+            ushort CorrectMasksCount = 0;
+
+            foreach (var CheckResult in CheckResults) if (CheckResult.Item1) CorrectMasksCount++;
+
+            return new Tuple<bool, double, IEnumerable<Tuple<bool, string, string>>>
+                (CorrectMasksCount == CheckResults.Count,
+                (double)CorrectMasksCount / (double)CheckResults.Count,
+                CheckResults);
+        }
+        Tuple<bool, double, string> CheckCategoryColor(IfcStore IFCFile, XmlElement CategoryColorRule)
+        {
+            string AttributeName = CategoryColorRule.Attributes.GetNamedItem("attributeName").Value;
+            if (string.IsNullOrEmpty(AttributeName)) throw new Exception("Некорректный атрибут 'attributeName'.");
+
+
+
+            string AttributeValue = CategoryColorRule.Attributes.GetNamedItem("attributeValue").Value;
+            if (string.IsNullOrEmpty(AttributeValue)) throw new Exception("Некорректный атрибут 'attributeValue'.");
+
+
+            Color CategoryColor = Color.Black;
+
+            Type IfcType = null;
+            foreach (XmlElement CategoryAttribute in CategoryColorRule.ChildNodes)
+            {
+                switch (CategoryAttribute.Name)
+                {
+                    case "Color":
+                        {
+                            CategoryColor = Color.FromArgb
+                                (byte.Parse(CategoryAttribute.Attributes.GetNamedItem("r").Value)
+                                , byte.Parse(CategoryAttribute.Attributes.GetNamedItem("g").Value)
+                                , byte.Parse(CategoryAttribute.Attributes.GetNamedItem("b").Value));
+                            break;
+                        }
+                    case "ifcClass":
+                        {
+                            string TypeName = CategoryAttribute.Attributes.GetNamedItem("ifcClass").Value;
+                            if (string.IsNullOrEmpty(TypeName)) throw new Exception("Некорректный атрибут 'ifcClass'.");
+
+                            foreach (Assembly Asm in AppDomain.CurrentDomain.GetAssemblies())
+                            {
+                                IfcType = Asm.GetType("Xbim.Ifc4.Interfaces.I" + TypeName);
+                                if (IfcType != null) break;
+                            }
+
+                            if (IfcType == null) throw new Exception("Некорректное значение атрибута 'ifcClass': " + TypeName + '.');
+                            break;
+                        }
+                    default: throw new Exception("Неизвестный XML-элемент в 'CategoryElementColors'.");
+                }
+            }
+
+            var TemplateObjectType = typeof(IfcRuleChecker);
+            var Method = TemplateObjectType.GetMethod("CheckColor");
+            var Hurr = Method.MakeGenericMethod(IfcType);
+
+            return Hurr.Invoke(Method, new object[] { IFCFile, AttributeName, AttributeValue, CategoryColor }) as Tuple<bool, double, string>;
+        }
+        static public Tuple<bool, double, string> CheckColor<IIfcLocalType>(IfcStore IFCFile, string AttributeName, string AttributeValue, Color CategotyColor) where IIfcLocalType : IIfcElement
+        {
+            IEnumerable<IIfcColourRgb> Colours = GetColours<IIfcLocalType>(IFCFile, AttributeName, AttributeValue);
+
+            long CorrectColors = 0;
+
+            foreach (var Colour in Colours)
+            {
+                Color CurrentColour = Color.FromArgb(
+                    (byte)Math.Round(Colour.Red * 255, 0)
+                    , (byte)Math.Round(Colour.Green * 255, 0)
+                    , (byte)Math.Round(Colour.Blue * 255, 0));
+
+                if (CurrentColour == CategotyColor) CorrectColors++;
+            }
+
+            return new(CorrectColors / Colours.Count() == 1, CorrectColors / Colours.Count(), AttributeName);
+        }
+        static IEnumerable<IIfcColourRgb> GetColours<IIfcLocalType>(IfcStore IFCFile, string AttributeName, string AttributeValue) where IIfcLocalType : IIfcElement
         {
             IEnumerable<IIfcColourRgb> Colours = new List<IIfcColourRgb>();
 
-            foreach (var Element in IIfcStore.Instances.OfType<IIfcLocalType>())
+            foreach (var Element in IFCFile.Instances.OfType<IIfcLocalType>())
             {
                 var Properties = Element
                     .IsDefinedBy
@@ -137,134 +304,26 @@ namespace IfcRuleChecker
 
             return Colours;
         }
-        public static Tuple<bool, long, long> CheckCategoryElementColor<IIfcLocalType>(IfcStore IIfcStore, String AttributeName, String AttributeValue, Color CategoryColor) where IIfcLocalType : IIfcElement
+        Tuple<bool, Tuple<double, double, double, double>, string> CheckCoordinates(IfcStore IFCFile, XmlElement CoordenatesRule)
         {
-            var CurrentCategoryColors = GetIfcColours<IIfcLocalType>(IIfcStore, AttributeName, AttributeValue);
+            string Name = CoordenatesRule.Attributes.GetNamedItem("name").Value;
 
-            long CategoryColorCount = CurrentCategoryColors.Count();
-            long CorrectCategoryColorsCount = 0;
+            double
+                X = double.Parse(CoordenatesRule.Attributes.GetNamedItem("e").Value),
+                Y = double.Parse(CoordenatesRule.Attributes.GetNamedItem("n").Value),
+                R = double.Parse(CoordenatesRule.Attributes.GetNamedItem("r").Value);
 
-            foreach (var CurrColor in CurrentCategoryColors)
-            {
-                if ((double)CurrColor.Red.Value != ((double)CategoryColor.R / 255)
-                    || (double)CurrColor.Green.Value != ((double)CategoryColor.G / 255)
-                    || (double)CurrColor.Blue.Value != ((double)CategoryColor.B / 255))
-                    CorrectCategoryColorsCount++;
-            }
-            return new Tuple<bool, long, long>(CorrectCategoryColorsCount / CategoryColorCount == 1
-                                              , CategoryColorCount
-                                              , CorrectCategoryColorsCount);
-        }
-        static bool CheckCategoryElementColors(IfcStore IIfcStore, XmlElement IIfcCategoryColorsRuleXmlElement, ref XmlDocument IXmlDocument, out long CategoryColorsCount, out long CorrectCategoryColorsCount)
-        {
-            CategoryColorsCount = 0;
-            CorrectCategoryColorsCount = 0;
+            ushort Z = ushort.Parse(CoordenatesRule.Attributes.GetNamedItem("a").Value);
 
-            string
-                AttributeName = null,
-                AttributeValue = null;
-
-            Color?
-                CategoryColor = null;
-
-            Type
-                CurrentIfcClass = null;
-
-            bool
-                IsCorrectCategoryColor,
-                CheckResult = true;
-
-            foreach (XmlElement ICategoryColorRule in IIfcCategoryColorsRuleXmlElement.ChildNodes)
-            {
-                switch (ICategoryColorRule.Name)
-                {
-                    case "attributeName":
-                        {
-                            AttributeName = ICategoryColorRule.InnerText; break;
-                        }
-                    case "attributeValue":
-                        {
-                            AttributeValue = ICategoryColorRule.InnerText; break;
-                        }
-                    case "Color":
-                        {
-                            CategoryColor = Color.FromArgb(
-                                byte.Parse(ICategoryColorRule.ChildNodes[0].InnerText),
-                                byte.Parse(ICategoryColorRule.ChildNodes[1].InnerText),
-                                byte.Parse(ICategoryColorRule.ChildNodes[2].InnerText));
-
-                            break;
-                        }
-                    case "ifcClass":
-                        {
-                            foreach (Assembly Asm in AppDomain.CurrentDomain.GetAssemblies())
-                            {
-                                CurrentIfcClass = Asm.GetType("Xbim.Ifc4.Interfaces.I" + ICategoryColorRule.InnerText);
-
-                                if (CurrentIfcClass != null) break;
-                            }
-
-                            break;
-                        }
-                    default: break;
-                }
-            }
-
-            var TemplateProgramObjectType = typeof(Program);
-            var ProgramMethod = TemplateProgramObjectType.GetMethod("CheckCategoryElementColor");
-            var Hurr = ProgramMethod.MakeGenericMethod(CurrentIfcClass);
-
-            var TemplateVariable = (Tuple<bool, long, long>)Hurr.Invoke(ProgramMethod, new object[] { IIfcStore, AttributeName, AttributeValue, CategoryColor });
-
-            IsCorrectCategoryColor = TemplateVariable.Item1;
-            CategoryColorsCount += TemplateVariable.Item2;
-            CorrectCategoryColorsCount += TemplateVariable.Item3;
-
-            CheckResult = CheckResult ? IsCorrectCategoryColor : false;
-
-            CurrentIfcClass = null;
-
-
-            return CheckResult;
-        }
-        static bool CheckCoordinatesCheck(IfcStore IIfcStore, XmlElement IIfcCoordinatesRuleXmlElement, ref XmlDocument IXmlDocument)
-        {
-            String Name = null;
-            double n = Double.MinValue, e = Double.MinValue;
-            ushort a = ushort.MinValue, r = ushort.MinValue;
-
-            foreach (XmlElement CoorXml in IIfcCoordinatesRuleXmlElement)
-            {
-                switch (CoorXml.Name)
-                {
-                    case "name":
-                        {
-                            Name = CoorXml.InnerText; break;
-                        }
-                    case "n":
-                        {
-                            n = double.Parse(CoorXml.InnerText); break;
-                        }
-                    case "e":
-                        {
-                            e = double.Parse(CoorXml.InnerText); break;
-                        }
-                    case "a":
-                        {
-                            a = ushort.Parse(CoorXml.InnerText); break;
-                        }
-                    case "r":
-                        {
-                            r = ushort.Parse(CoorXml.InnerText); break;
-                        }
-                    default: break;
-                }
-            }
-
-            var Context = new Xbim3DModelContext(IIfcStore);
+            var Context = new Xbim3DModelContext(IFCFile.Model);
             Context.CreateContext();
 
-            IIfcElement IfcElement = IIfcStore.Instances.OfType<IIfcElement>().FirstOrDefault(i => i.Name == Name);
+            IIfcElement? IfcElement = IFCFile.Instances.OfType<IIfcElement>().FirstOrDefault(i => i.Name == Name);
+
+            if(IfcElement == null)
+            {
+                return new(false, new(double.MinValue, double.MinValue, double.MinValue, double.MinValue), Name);
+            }
 
             var GlobalPosition = Context
                 .ShapeInstances()
@@ -278,181 +337,32 @@ namespace IfcRuleChecker
                 .Transformation
                 .GetRotationQuaternion();
 
-            return n == GlobalPosition.Y
-                && e == GlobalPosition.X
-                && a == GlobalPosition.Z
-                && r == Rottion.Z;
+            return new(
+                   Y == GlobalPosition.Y
+                && X == GlobalPosition.X
+                && Z == GlobalPosition.Z
+                && R == Rottion.Z, new(Y, X, Z, R), Name); 
         }
-        public static bool CheckAttribute<IIfcLocalType>(IfcStore IIfcStore, String AttributeName, String AttributeType, String[] ComparisonType, String[] ComparisonValue) where IIfcLocalType : IIfcElement
+        Tuple<bool, string, string> CheckAttribute()
         {
-            return false;
+            return new(false, "", "");
         }
-        static bool CheckAttributesComperisons(IfcStore IIfcStore, XmlElement IIfcAttributesRules, ref XmlDocument IXmlDocument)
-        {
-            bool CheckResult = true;
-
-            List<Type> IfcTypes = new List<Type>();
-
-            String
-                AttributeName = null,
-                AttributeType = null;
-
-            List<String>
-                ComparisonTypes = new List<String>(),
-                ComparisonValues = new List<string>();
-
-            foreach (XmlElement AttributeXmlElement in IIfcAttributesRules.ChildNodes)
-            {
-                switch (AttributeXmlElement.Name)
-                {
-                    case "ifcClass":
-                        {
-                            foreach (Assembly Asm in AppDomain.CurrentDomain.GetAssemblies())
-                            {
-                                Type IfcType = Asm.GetType("Xbim.Ifc4.Interfaces.I" + AttributeXmlElement.InnerText);
-
-                                if (IfcType != null)
-                                {
-                                    IfcTypes.Add(IfcType); break;
-                                }
-                            }
-                            break;
-                        }
-                    case "Attribute":
-                        {
-                            foreach (XmlElement Child in AttributeXmlElement.ChildNodes)
-                            {
-                                switch (Child.Name)
-                                {
-                                    case "name":
-                                        {
-                                            AttributeName = Child.InnerText; break;
-                                        }
-                                    case "type":
-                                        {
-                                            AttributeName = Child.InnerText; break;
-                                        }
-                                    default: break;
-                                }
-                            }
-                            break;
-                        }
-                    case "Comparison":
-                        {
-                            String Type = null, Value = null;
-
-                            foreach (XmlElement Child in AttributeXmlElement.ChildNodes)
-                            {
-                                switch (Child.Name)
-                                {
-                                    case "comparisonType":
-                                        {
-                                            Type = Child.InnerText; break;
-                                        }
-                                    case "comparisonValue":
-                                        {
-                                            Value = Child.InnerText; break;
-                                        }
-                                    default: break;
-                                }
-                            }
-
-                            ComparisonTypes.Add(Type);
-                            ComparisonValues.Add(Value);
-
-                            break;
-                        }
-                    default: break;
-                }
-            }
-
-            foreach (var IfcType in IfcTypes)
-            {
-                var TemplateProgramObjectType = typeof(Program);
-                var ProgramMethod = TemplateProgramObjectType.GetMethod("CheckAttribute");
-                var Hurr = ProgramMethod.MakeGenericMethod(IfcType);
-
-                var TemplateVariable = (bool)Hurr.Invoke(ProgramMethod, new object[] { IIfcStore, AttributeName, AttributeType, ComparisonTypes, ComparisonValues });
-
-                CheckResult = CheckResult ? TemplateVariable : false;
-            }
-
-
-            return CheckResult;
-        }
-        static XmlDocument CheckIfcFile(FileStream IIfcFileStream, FileStream IRuleXmlFileStream, ref XmlDocument? IXmlDocument)
-        {
-            bool
-                IsCorrectIfcVersion,
-                IsCorrectIfcFileSize,
-                IsPassFileNameMaskCheck,
-                IsPassCategoryElementColorCheck,
-                IsPassCoordinatesCheck,
-                IsCorrectAttributeComperisonCheck;
-
-            ushort
-                NameFieldsCount,
-                CorrectNameCount;
-
-            long
-                CategoryColorsCount,
-                CorrectCategoryColorsCount;
-
-            XmlDocument IRuleXmlFile = new XmlDocument();
-            IRuleXmlFile.Load(IRuleXmlFileStream);
-
-            IfcStore IIfcFileStore = IfcStore.Open(
-                IIfcFileStream, Xbim.IO.StorageType.Ifc
-                , IRuleXmlFile.DocumentElement.FirstChild.InnerText == "Ifc4"
-                ? Xbim.Common.Step21.XbimSchemaVersion.Ifc4
-                : Xbim.Common.Step21.XbimSchemaVersion.Ifc2X3
-                , Xbim.IO.XbimModelType.MemoryModel);
-
-            foreach (XmlElement IIfcRuleXmlElement in IRuleXmlFile.DocumentElement)
-            {
-                switch (IIfcRuleXmlElement.Name)
-                {
-                    case "ifcVersion":
-                        {
-                            IsCorrectIfcVersion = CheckIfcVersion(IIfcFileStore, IIfcRuleXmlElement); break;
-                        }
-                    case "fileSize":
-                        {
-                            IsCorrectIfcFileSize = CheckIfcFileSize(IIfcFileStream, IIfcRuleXmlElement); break;
-                        }
-                    case "FileNameMask":
-                        {
-                            IsPassFileNameMaskCheck = CheckFileMaskName(IIfcFileStream, IIfcRuleXmlElement, ref IXmlDocument, out NameFieldsCount, out CorrectNameCount); break;
-                        }
-                    case "CategoryElementColors":
-                        {
-                            IsPassCategoryElementColorCheck = CheckCategoryElementColors(IIfcFileStore, IIfcRuleXmlElement, ref IXmlDocument, out CategoryColorsCount, out CorrectCategoryColorsCount); break;
-                        }
-                    case "Coordinates":
-                        {
-                            IsPassCoordinatesCheck = CheckCoordinatesCheck(IIfcFileStore, IIfcRuleXmlElement, ref IXmlDocument); break;
-                        }
-                    case "AttributesComparsion":
-                        {
-                            IsCorrectAttributeComperisonCheck = CheckAttributesComperisons(IIfcFileStore, IIfcRuleXmlElement, ref IXmlDocument); break;
-                        }
-                    default: break;
-                }
-            }
-
-            return new XmlDocument();
-        }
-        static XmlDocument CheckIfcFiles(FileStream[] IIfcFilesStreams, FileStream[] IRuleXmlFileStream)
-        {
-            return new XmlDocument();
-        }
+    }
+    class Program
+    {
         static void Main()
         {
-            var XmlDocumentResult = new XmlDocument();
-            var Result = CheckIfcFile(
-                new FileStream("C:\\Users\\matve\\Downloads\\Telegram Desktop\\SYLA_ALL_CPTI_B_1.6_ХХ_24.1.1.1_M6_MF_1_AR22_I4000.ifc", FileMode.Open)
-                , new FileStream("D:\\Практика\\ifcCheckerRules\\TestFile.xml", FileMode.Open)
-                , ref XmlDocumentResult);
+            IfcRuleChecker ifcRuleChecker = new IfcRuleChecker();
+            try
+            {
+                ifcRuleChecker.CheckIfcFile(
+                    new FileStream("C:\\Users\\matve\\Downloads\\Telegram Desktop\\SYLA_ALL_CPTI_B_1.6_ХХ_24.1.1.1_M6_MF_1_AR22_I4000.ifc", FileMode.Open)
+                  , new FileStream("D:\\Практика\\ifcCheckerRules\\TestFile.xml", FileMode.Open));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+            }
         }
     }
 }

@@ -1,32 +1,13 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
-<IfcCheckerRules>
-	<ifcVersion>Ifc4</ifcVersion>
-	<fileSize>256</fileSize>
-	<FileNameMask>
-		<separator>_</separator>
-		<FileNamePlaceholder>
-			<order>25</order>
-			<type>Тип</type>
-			<value>Значение;Значение</value>
-		</FileNamePlaceholder>
+<IfcCheckerRules ifcVersion="Ifc4" fileSize="256">
+	<FileNameMask separator="_">
+		<FileNamePlaceholder order="25" type="Значение из списка" value="Значение;Значение"/>
 	</FileNameMask>
-	<CategoryElementColors>
-		<attributeName>Наименование системы по ПИМ</attributeName>
-		<attributeValue>Трубопроводная система: Прочее</attributeValue>
-		<Color>
-			<r>255</r>
-			<g>0</g>
-			<b>255</b>
-		</Color>
-		<ifcClass>IfcPipeSegment</ifcClass>
+	<CategoryElementColors attributeName="Наименование системы по ПИМ" attributeValue="Трубопроводная система: Прочее">
+		<Color r="255" g="0" b="255"/>
+		<ifcClass ifcClass="IfcPipeSegment"/>
 	</CategoryElementColors>
-	<Coordinates>
-		<name></name>
-		<n></n>
-		<e></e>
-		<a></a>
-		<r></r>
-	</Coordinates>
+	<Coordinates name="SomeAtr" n="1" e="1" a="1" r="1"/>
 	<AttributesComparison>
 		<ifcClass></ifcClass>
 		<Attribute>
