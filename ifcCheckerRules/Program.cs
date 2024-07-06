@@ -151,7 +151,7 @@ namespace IfcRuleChecker
                     || (double)CurrColor.Blue.Value != ((double)CategoryColor.B / 255))
                     CorrectCategoryColorsCount++;
             }
-            return new Tuple<bool, long, long>( CorrectCategoryColorsCount / CategoryColorCount == 1
+            return new Tuple<bool, long, long>(CorrectCategoryColorsCount / CategoryColorCount == 1
                                               , CategoryColorCount
                                               , CorrectCategoryColorsCount);
         }
@@ -208,24 +208,22 @@ namespace IfcRuleChecker
                         }
                     default: break;
                 }
-
-                if (CurrentIfcClass != null)
-                {
-                    var TemplateProgramObjectType = typeof(Program);
-                    var ProgramMethod = TemplateProgramObjectType.GetMethod("CheckCategoryElementColor");
-                    var Hurr = ProgramMethod.MakeGenericMethod(CurrentIfcClass);
-
-                    var TemplateVariable = (Tuple<bool, long, long>)Hurr.Invoke(ProgramMethod, new object[] { IIfcStore, AttributeName, AttributeValue, CategoryColor });
-
-                    IsCorrectCategoryColor = TemplateVariable.Item1;
-                    CategoryColorsCount += TemplateVariable.Item2;
-                    CorrectCategoryColorsCount += TemplateVariable.Item3;
-
-                    CheckResult = CheckResult ? IsCorrectCategoryColor : false;
-
-                    CurrentIfcClass = null;
-                }
             }
+
+            var TemplateProgramObjectType = typeof(Program);
+            var ProgramMethod = TemplateProgramObjectType.GetMethod("CheckCategoryElementColor");
+            var Hurr = ProgramMethod.MakeGenericMethod(CurrentIfcClass);
+
+            var TemplateVariable = (Tuple<bool, long, long>)Hurr.Invoke(ProgramMethod, new object[] { IIfcStore, AttributeName, AttributeValue, CategoryColor });
+
+            IsCorrectCategoryColor = TemplateVariable.Item1;
+            CategoryColorsCount += TemplateVariable.Item2;
+            CorrectCategoryColorsCount += TemplateVariable.Item3;
+
+            CheckResult = CheckResult ? IsCorrectCategoryColor : false;
+
+            CurrentIfcClass = null;
+
 
             return CheckResult;
         }
@@ -285,9 +283,102 @@ namespace IfcRuleChecker
                 && a == GlobalPosition.Z
                 && r == Rottion.Z;
         }
-        static bool CheckAttributesComperisons(IfcStore IIfcStore, XmlElement IIfcAttributesRules, ref XmlDocument IXmlDocument)
+        public static bool CheckAttribute<IIfcLocalType>(IfcStore IIfcStore, String AttributeName, String AttributeType, String[] ComparisonType, String[] ComparisonValue) where IIfcLocalType : IIfcElement
         {
             return false;
+        }
+        static bool CheckAttributesComperisons(IfcStore IIfcStore, XmlElement IIfcAttributesRules, ref XmlDocument IXmlDocument)
+        {
+            bool CheckResult = true;
+
+            List<Type> IfcTypes = new List<Type>();
+
+            String
+                AttributeName = null,
+                AttributeType = null;
+
+            List<String>
+                ComparisonTypes = new List<String>(),
+                ComparisonValues = new List<string>();
+
+            foreach (XmlElement AttributeXmlElement in IIfcAttributesRules.ChildNodes)
+            {
+                switch (AttributeXmlElement.Name)
+                {
+                    case "ifcClass":
+                        {
+                            foreach (Assembly Asm in AppDomain.CurrentDomain.GetAssemblies())
+                            {
+                                Type IfcType = Asm.GetType("Xbim.Ifc4.Interfaces.I" + AttributeXmlElement.InnerText);
+
+                                if (IfcType != null)
+                                {
+                                    IfcTypes.Add(IfcType); break;
+                                }
+                            }
+                            break;
+                        }
+                    case "Attribute":
+                        {
+                            foreach (XmlElement Child in AttributeXmlElement.ChildNodes)
+                            {
+                                switch (Child.Name)
+                                {
+                                    case "name":
+                                        {
+                                            AttributeName = Child.InnerText; break;
+                                        }
+                                    case "type":
+                                        {
+                                            AttributeName = Child.InnerText; break;
+                                        }
+                                    default: break;
+                                }
+                            }
+                            break;
+                        }
+                    case "Comparison":
+                        {
+                            String Type = null, Value = null;
+
+                            foreach (XmlElement Child in AttributeXmlElement.ChildNodes)
+                            {
+                                switch (Child.Name)
+                                {
+                                    case "comparisonType":
+                                        {
+                                            Type = Child.InnerText; break;
+                                        }
+                                    case "comparisonValue":
+                                        {
+                                            Value = Child.InnerText; break;
+                                        }
+                                    default: break;
+                                }
+                            }
+
+                            ComparisonTypes.Add(Type);
+                            ComparisonValues.Add(Value);
+
+                            break;
+                        }
+                    default: break;
+                }
+            }
+
+            foreach (var IfcType in IfcTypes)
+            {
+                var TemplateProgramObjectType = typeof(Program);
+                var ProgramMethod = TemplateProgramObjectType.GetMethod("CheckAttribute");
+                var Hurr = ProgramMethod.MakeGenericMethod(IfcType);
+
+                var TemplateVariable = (bool)Hurr.Invoke(ProgramMethod, new object[] { IIfcStore, AttributeName, AttributeType, ComparisonTypes, ComparisonValues });
+
+                CheckResult = CheckResult ? TemplateVariable : false;
+            }
+
+
+            return CheckResult;
         }
         static XmlDocument CheckIfcFile(FileStream IIfcFileStream, FileStream IRuleXmlFileStream, ref XmlDocument? IXmlDocument)
         {
