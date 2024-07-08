@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.10.35004.147
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ifcCheckerRules", "ifcCheckerRules\ifcCheckerRules.csproj", "{3CDA64F9-B083-40F0-95AD-5734B4D0FE10}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Internship", "Internship\Internship.csproj", "{F09417FD-CAFA-4961-9BA0-454357E57DEF}"
 EndProject
 Global
@@ -13,10 +11,6 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{3CDA64F9-B083-40F0-95AD-5734B4D0FE10}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{3CDA64F9-B083-40F0-95AD-5734B4D0FE10}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{3CDA64F9-B083-40F0-95AD-5734B4D0FE10}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{3CDA64F9-B083-40F0-95AD-5734B4D0FE10}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F09417FD-CAFA-4961-9BA0-454357E57DEF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F09417FD-CAFA-4961-9BA0-454357E57DEF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F09417FD-CAFA-4961-9BA0-454357E57DEF}.Release|Any CPU.ActiveCfg = Release|Any CPU
