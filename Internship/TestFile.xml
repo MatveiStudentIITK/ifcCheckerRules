@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ifcRuleChecker ifcVersion="Ifc4" fileSize="250">
+	<FileNameMask separator="_">
+		<FileNamePlaceholder order="0" type="Свободное значение" value=""/>
+		<FileNamePlaceholder order="1" type="Значение из списка" value="NONE;ALL;SOME"/>
+		<FileNamePlaceholder order="2" type="Значение из списка" value="NONE;ALL;SOME"/>
+	</FileNameMask>
+	<CategoryElementColors attributeName="Наименование системы по ПИМ" attributeValue="Трубопроводная система: Прочее">
+		<Color r="63" g="136" b="143"/>
+		<ifcClass ifcClass="IfcPipeSegment"/>
+	</CategoryElementColors>
+	<CategoryElementColors attributeName="Наименование системы по ПИМ" attributeValue="Трубопроводная система: Прочее">
+		<Color r="255" g="136" b="143"/>
+		<ifcClass ifcClass="IfcPipeSegment"/>
+	</CategoryElementColors>
+	<Coordinates name="SomeName" n="0" e="0" a="0" r="0"/>
+	<AttributesComparison>
+		<ifcClass ifcClass="IfcPipeSegment"/>
+		<Attribute name="SomeName" type="Text"/>
+		<Comparison comparisonType="==" comparisonValue="=="/>
+	</AttributesComparison>
+</ifcRuleChecker>

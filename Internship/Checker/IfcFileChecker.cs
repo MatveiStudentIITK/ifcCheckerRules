@@ -10,6 +10,17 @@ namespace Internship.Checker
 {
     internal partial class IfcFileChecker
     {
+        internal XDocument CheckFiles(FileStream[] IFCFilesStreams, FileStream[] XMLFilesStreams)
+        {
+            XDocument XDocument = new XDocument();
+
+            for (int i = 0; i < IFCFilesStreams.Length; i++)
+            {
+                XDocument.Add(CheckIfcFile(IFCFilesStreams[i], XMLFilesStreams[i]));
+            }
+
+            return XDocument;
+        }
         internal XElement CheckIfcFile(FileStream IFCFileStream, FileStream XMLFileStream)
         {
             var IFCFile = IfcStore.Open(IFCFileStream, Xbim.IO.StorageType.Ifc, Xbim.IO.XbimModelType.MemoryModel)
@@ -36,7 +47,7 @@ namespace Internship.Checker
                         {
                             CheckResultXmlElement.Add(CheckFileNameMask(IFCFileStream, IfcCheckerRule)); break;
                         }
-                    case "CategoryElementColor":
+                    case "CategoryElementColors":
                         {
                             CheckResultXmlElement.Add(CheckCategoryElementColor(IFCFile, IfcCheckerRule)); break;
                         }
@@ -46,7 +57,7 @@ namespace Internship.Checker
                         }
                     case "AttributesComparison":
                         {
-                            CheckResultXmlElement.Add(); break;
+                            CheckResultXmlElement.Add(CheckAttributesComparison(IFCFile, IfcCheckerRule)); break;
                         }
                     default: throw new Exception("XML-файл: '" + XMLFileStream.Name + "' содержит неизвестный XML-элемент: '" + IfcCheckerRule.Name + "'.");
                 }
@@ -72,14 +83,14 @@ namespace Internship.Checker
 
             foreach (var FileNamePlaceHolder in FileNameMaskRule.Elements())
             {
-                XElement CurrentCheckResult = new("SingleMaskCheckResult",
-                    new XAttribute("Result", "")
-                , new XAttribute("Type", "")
-                , new XAttribute("Value", ""));
-
                 var Order = ushort.Parse(FileNamePlaceHolder.Attribute("order").Value);
 
                 var TargetType = FileNamePlaceHolder.Attribute("type").Value;
+
+                XElement CurrentCheckResult = new("SingleMaskCheckResult",
+                    new XAttribute("Result", "")
+                , new XAttribute("Type", TargetType)
+                , new XAttribute("Value", NameMasks[Order]));
 
                 CurrentCheckResult.Attribute("Type").Value = TargetType;
 
@@ -127,7 +138,7 @@ namespace Internship.Checker
 
             CheckResult.Attribute("Result").Value = AcceptedOrNot((CorrectCount / NameMasks.Count()) == 1);
 
-            CheckResult.Attribute("Procent").Value = (CorrectCount / NameMasks.Count()).ToString();
+            CheckResult.Attribute("Procent").Value = ((double)CorrectCount / (double)NameMasks.Length).ToString();
 
             return CheckResult;
         }
@@ -136,13 +147,16 @@ namespace Internship.Checker
             var CheckResult = new XElement("CategoryElementColorCheckResult",
                 new XAttribute("Result", "")
                 , new XAttribute("Procent", "")
-                , new XAttribute("Name", ""));
+                , new XAttribute("Name", "")
+                , new XAttribute("Value", ""));
 
             string AttributeName
                 = CheckResult.Attribute("Name").Value
                 = CategoryElementColorRule.Attribute("attributeName").Value;
 
-            string AttributeValue = CategoryElementColorRule.Attribute("attributeValue").Value;
+            string AttributeValue
+                = CheckResult.Attribute("Value").Value
+                = CategoryElementColorRule.Attribute("attributeValue").Value;
 
             byte Red = byte.Parse(CategoryElementColorRule.Element("Color").Attribute("r").Value)
 
@@ -169,16 +183,25 @@ namespace Internship.Checker
 
             long CorrectElementColorCount = 0;
 
+            if(Colors.Count == 0)
+            {
+                CheckResult.Attribute("Result").Value = AcceptedOrNot(false) + ": не найдена модель";
+
+                CheckResult.Attribute("Procent").Value = "0";
+
+                return CheckResult;
+            }
+
             foreach (var ElementColor in Colors)
                 if (ElementColor == CategoryColor) CorrectElementColorCount++;
 
             CheckResult.Attribute("Result").Value = AcceptedOrNot((CorrectElementColorCount / Colors.Count) == 1);
 
-            CheckResult.Attribute("Procent").Value = (CorrectElementColorCount / Colors.Count).ToString();
+            CheckResult.Attribute("Procent").Value = ((double)CorrectElementColorCount / (double)Colors.Count).ToString();
 
             return CheckResult;
         }
-        static List<Color> GetColors<IIfcLocalType>(IfcStore IFCFile, string AttributeName, string AttributeValue) where IIfcLocalType : IIfcElement
+        public static List<Color> GetColors<IIfcLocalType>(IfcStore IFCFile, string AttributeName, string AttributeValue) where IIfcLocalType : IIfcElement
         {
             List<Color> Colors = new();
 
@@ -232,8 +255,7 @@ namespace Internship.Checker
             var Context = new Xbim3DModelContext(IFCFile.Model);
             Context.CreateContext();
 
-            IIfcElement IfcElement = IFCFile.Instances.OfType<IIfcElement>().FirstOrDefault(i => i.Name == Name)
-                ?? throw new Exception("Модели с именем: '" + Name + "' нет.");
+            IIfcElement IfcElement = IFCFile.Instances.OfType<IIfcElement>().FirstOrDefault(i => i.Name == Name);
 
             if (IfcElement == null)
             {
@@ -291,7 +313,7 @@ namespace Internship.Checker
                 {
                     case "ifcClass":
                         {
-                            string IfcClassName = AttributesComparison.Attribute("ifcClass").Value;
+                            string IfcClassName = "Xbim.Ifc4.Interfaces.I" + AttributesComparison.Attribute("ifcClass").Value;
 
                             Type IfcCLass = null;
 
@@ -324,7 +346,7 @@ namespace Internship.Checker
             foreach(var IfcClass in IfcClasses)
             {
                 var ObjectType = typeof(IfcFileChecker);
-                var Method = ObjectType.GetMethod("GetColors");
+                var Method = ObjectType.GetMethod("CompareAttributes");
                 var Hurr = Method.MakeGenericMethod(IfcClass);
 
                 foreach(var Comparison in Comparisons)
@@ -335,9 +357,13 @@ namespace Internship.Checker
                 }
             }
 
+            CheckResult.Attribute("Result").Value = AcceptedOrNot((CorrectAttributesCount / (IfcClasses.Count * Comparisons.Count)) == 1);
+
+            CheckResult.Attribute("Procent").Value = ((double)CorrectAttributesCount / (double)(IfcClasses.Count * Comparisons.Count)).ToString();
+
             return CheckResult;
         }
-        static XElement CompareAttributes<IIfcLocalType>(IfcStore IFCFile, string AttributeName, string AttributeType, string ComparisonType, string ComparisonValue) where IIfcLocalType : IIfcElement
+        public static XElement CompareAttributes<IIfcLocalType>(IfcStore IFCFile, string AttributeName, string AttributeType, string ComparisonType, string ComparisonValue) where IIfcLocalType : IIfcElement
         {
             XElement CheckResult = new("SingleCheckResult"
                 , new XAttribute("Result", "")
@@ -359,6 +385,16 @@ namespace Internship.Checker
                     .NominalValue
                     .Value
                     .ToString();
+
+                if(CurrentValue == null)
+                {
+                    CheckResult.Add(new XElement("CheckResult"
+                                , new XAttribute("IfcType", typeof(IIfcLocalType).Name.Remove(0, 1))
+                                , new XAttribute("AttributeName", AttributeName)
+                                , new XAttribute("Result", AcceptedOrNot(false) + ": не найдена модель")));
+
+                    continue;
+                }
 
                 bool IsPass = false;
 
@@ -421,6 +457,10 @@ namespace Internship.Checker
                     default: throw new Exception("Неизвестный тип атрибута: '" + AttributeType + "'.");
                 }
             }
+
+            CheckResult.Attribute("Result").Value = AcceptedOrNot((CorrectComparisonsCount / IFCFile.Instances.OfType<IIfcLocalType>().Count()) == 1);
+
+            CheckResult.Attribute("Procent").Value = ((double)CorrectComparisonsCount / (double)IFCFile.Instances.OfType<IIfcLocalType>().Count()).ToString();
 
             return CheckResult;
         }
