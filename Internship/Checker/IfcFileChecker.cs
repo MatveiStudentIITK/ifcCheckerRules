@@ -400,11 +400,29 @@ namespace Internship.Checker
                                 , new XAttribute("Result", AcceptedOrNot(IsPass))));
                             break;
                         }
+                    case "Area":
+                        {
+                            if (IsPass = CompareValues(double.Parse(CurrentValue), double.Parse(ComparisonValue), ComparisonType)) CorrectComparisonsCount++;
+                            CheckResult.Add(new XElement("CheckResult"
+                                , new XAttribute("IfcType", typeof(IIfcLocalType).Name.Remove(0, 1))
+                                , new XAttribute("AttributeName", AttributeName)
+                                , new XAttribute("Result", AcceptedOrNot(IsPass))));
+                            break;
+                        }
+                    case "MassDestiny":
+                        {
+                            if (IsPass = CompareValues(double.Parse(CurrentValue), double.Parse(ComparisonValue), ComparisonType)) CorrectComparisonsCount++;
+                            CheckResult.Add(new XElement("CheckResult"
+                                , new XAttribute("IfcType", typeof(IIfcLocalType).Name.Remove(0, 1))
+                                , new XAttribute("AttributeName", AttributeName)
+                                , new XAttribute("Result", AcceptedOrNot(IsPass))));
+                            break;
+                        }
                     default: throw new Exception("Неизвестный тип атрибута: '" + AttributeType + "'.");
                 }
             }
 
-            return new("");
+            return CheckResult;
         }
         static bool CompareValues<T>(T A, T B, string ComparisonType) where T : IComparable<T>, IComparable
         {
