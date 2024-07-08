@@ -19,7 +19,7 @@ namespace Internship
             public Tuple<bool, double, IEnumerable<Tuple<bool, string, string>>> FileMaskCheckResult;
             public Tuple<bool, double, IEnumerable<Tuple<bool, double, string>>> CategoryColorCheckResult = new(false, 0, new List<Tuple<bool, double, string>>());
             public Tuple<bool, double, IEnumerable<Tuple<bool, Tuple<double, double, double, double>, string>>> CoordinatesCheckResult = new(false, 0, new List<Tuple<bool, Tuple<double, double, double, double>, string>>());
-            public Tuple<bool, double, IEnumerable<Tuple<bool, string, string>>> AttributesCheckResult = new(false, 0, new List<Tuple<bool, string, string>>());
+            public Tuple<bool, double, IEnumerable<Tuple<bool, string, string, double>>> AttributesCheckResult = new(false, 0, new List<Tuple<bool, string, string, double>>());
         }
         public CheckResult CheckIfcFile(FileStream IFCFileStream, FileStream XMLFileStream)
         {
@@ -83,8 +83,8 @@ namespace Internship
                         }
                     case "AttributesComparison":
                         {
-                            (IResult.AttributesCheckResult.Item3 as List<Tuple<bool, string, string>>)
-                                .Add(CheckAttribute());
+                            (IResult.AttributesCheckResult.Item3 as List<Tuple<bool, string, string, double>>)
+                                .Add(CheckAttribute(IFCFile, ICurrentXMLElement));
                             break;
                         }
                     default: throw (new Exception("Неизвестный XML-элемент в XML-файле: '" + XMLFileStream.Name + "'."));
@@ -343,10 +343,74 @@ namespace Internship
                 && Z == GlobalPosition.Z
                 && R == Rottion.Z, new(Y, X, Z, R), Name); 
         }
-        Tuple<bool, string, string> CheckAttribute()
+        Tuple<bool, string, string, double> CheckAttribute(IfcStore IFCFile, XmlElement AttributesComparisonRule)
         {
-            return new(false, "", "");
+            IEnumerable<Type> IfcTypes = new List<Type>();
+
+            string AttributeName = null, AttributeType = null;
+
+            IEnumerable<Tuple<string, string>> ComparisonAttributes = new List<Tuple<string, string>>();
+
+            foreach (XmlElement AttRule in AttributesComparisonRule.ChildNodes)
+            {
+                switch (AttRule.Name)
+                {
+                    case "ifcClass":
+                        {
+                            string IfcTypeName = AttRule.Attributes.GetNamedItem("ifcClass").Value;
+                            if (string.IsNullOrEmpty(IfcTypeName)) throw new Exception("Некорректный атрибут 'ifcClass'.");
+
+                            Type IfcType = null;
+
+                            foreach (Assembly Asm in AppDomain.CurrentDomain.GetAssemblies())
+                            {
+                                IfcType = Asm.GetType("Xbim.Ifc4.Interfaces.I" + IfcTypeName);
+                                if (IfcType != null) break;
+                            }
+
+                            if (IfcType == null) throw new Exception("Некорректное значение атрибута 'ifcClass': '" + IfcTypeName + "'.");
+
+                            (IfcTypes as List<Type>).Add(IfcType);
+                            break;
+                        }
+                    case "Attribute":
+                        {
+                            AttributeName = AttRule.Attributes.GetNamedItem("name").Value;
+                            if (string.IsNullOrEmpty(AttributeName)) throw new Exception("Некорректное значение атрибута 'name'.");
+
+                            AttributeType = AttRule.Attributes.GetNamedItem("type").Value;
+                            if (string.IsNullOrEmpty(AttributeName)) throw new Exception("Некорректное значение атрибута 'type'.");
+                            break;
+                        }
+                    case "Comparison":
+                        {
+                            string type = AttRule.Attributes.GetNamedItem("comparisonType").Value
+                                , value = AttRule.Attributes.GetNamedItem("comparisonValue").Value;
+
+                            if (string.IsNullOrEmpty(value)) throw new Exception("Некорректное значение атрибута 'comparisonValue'.");
+                            if (string.IsNullOrEmpty(type)) throw new Exception("Некорректное значение атрибута 'comparisonType'.");
+
+                            (ComparisonAttributes as List<Tuple<string, string>>).Add(new Tuple<string, string>(type, value));
+                            break;
+                        }
+                    default: throw new Exception("Неизвестный XML-элемент '" + AttRule.Name + "' в '" + AttributesComparisonRule.Name + "'.");
+                }
+            }
+
+            foreach(Type IfcType in IfcTypes)
+            {
+                var TemplateObjectType = typeof(IfcRuleChecker);
+                var Method = TemplateObjectType.GetMethod("CheckColor");
+                var Hurr = Method.MakeGenericMethod(IfcType);
+
+                foreach (var ComparisonAtt in ComparisonAttributes)
+                {
+                    var CheckResult = Hurr.Invoke(Method, new object[] { IFCFile, AttributeName, AttributeType, ComparisonAtt.Item1, ComparisonAtt.Item2 });
+                }
+            }
+            return new(false, "", "", 0);
         }
+
     }
     class Program
     {
